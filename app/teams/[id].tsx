@@ -1,8 +1,10 @@
 /**
  * Team setup screen: name, colors, roster builder.
  * Create new (id=new) or edit existing.
+ * Color picking: preset palette on all platforms; on web, native color input for custom.
  */
 
+import React from 'react';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import {
@@ -25,6 +27,20 @@ const DEFAULT_COLORS = {
   numberColor: '#ffffff',
   liberoColor: '#c64600',
 };
+
+/** Preset colors so tapping actually changes the color (works on web and native). */
+const TEAM_COLOR_PRESETS = [
+  '#1a5fb4', '#c64600', '#26a269', '#813d9c', '#3584e4', '#e5a50a',
+  '#2ec27e', '#a347ba', '#ed333b', '#1c71d8', '#33d17a', '#986a44',
+];
+const NUMBER_COLOR_PRESETS = [
+  '#ffffff', '#000000', '#f5f5f5', '#2d2d2d', '#f9f06b', '#ffebe6',
+  '#e0e0e0', '#1a1a1a', '#ffcc00', '#c0c0c0',
+];
+const LIBERO_COLOR_PRESETS = [
+  '#c64600', '#9b59b6', '#27ae60', '#e67e22', '#3498db', '#e74c3c',
+  '#1abc9c', '#f1c40f', '#95a5a6', '#2ecc71',
+];
 
 export default function TeamSetupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -122,11 +138,51 @@ export default function TeamSetupScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Jersey / number color</Text>
+        <Text style={styles.label}>Team color</Text>
         <View style={styles.colorRow}>
-          <ColorButton label="Team" value={teamColor} onPress={() => setTeamColor('#1a5fb4')} />
-          <ColorButton label="Numbers" value={numberColor} onPress={() => setNumberColor('#ffffff')} />
-          <ColorButton label="Libero" value={liberoColor} onPress={() => setLiberoColor('#c64600')} />
+          {TEAM_COLOR_PRESETS.map((hex) => (
+            <ColorSwatch
+              key={hex}
+              hex={hex}
+              selected={teamColor.toLowerCase() === hex.toLowerCase()}
+              onPress={() => setTeamColor(hex)}
+            />
+          ))}
+          {Platform.OS === 'web' && (
+            <WebColorInput value={teamColor} onChange={setTeamColor} />
+          )}
+        </View>
+      </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Jersey number color</Text>
+        <View style={styles.colorRow}>
+          {NUMBER_COLOR_PRESETS.map((hex) => (
+            <ColorSwatch
+              key={hex}
+              hex={hex}
+              selected={numberColor.toLowerCase() === hex.toLowerCase()}
+              onPress={() => setNumberColor(hex)}
+            />
+          ))}
+          {Platform.OS === 'web' && (
+            <WebColorInput value={numberColor} onChange={setNumberColor} />
+          )}
+        </View>
+      </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Libero jersey color</Text>
+        <View style={styles.colorRow}>
+          {LIBERO_COLOR_PRESETS.map((hex) => (
+            <ColorSwatch
+              key={hex}
+              hex={hex}
+              selected={liberoColor.toLowerCase() === hex.toLowerCase()}
+              onPress={() => setLiberoColor(hex)}
+            />
+          ))}
+          {Platform.OS === 'web' && (
+            <WebColorInput value={liberoColor} onChange={setLiberoColor} />
+          )}
         </View>
       </View>
 
@@ -180,20 +236,56 @@ export default function TeamSetupScreen() {
   );
 }
 
-function ColorButton({
-  label,
-  value,
+function ColorSwatch({
+  hex,
+  selected,
   onPress,
 }: {
-  label: string;
-  value: string;
+  hex: string;
+  selected: boolean;
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity style={styles.colorButton} onPress={onPress}>
-      <View style={[styles.colorSwatch, { backgroundColor: value }]} />
-      <Text style={styles.colorLabel}>{label}</Text>
-    </TouchableOpacity>
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.colorSwatch,
+        { backgroundColor: hex },
+        selected && styles.colorSwatchSelected,
+      ]}
+      accessibilityLabel={`Color ${hex}`}
+    />
+  );
+}
+
+/** Web-only: native color picker. Invisible input overlays the swatch so tap opens browser picker. */
+function WebColorInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const normalized = value.startsWith('#') ? value : `#${value}`;
+  return (
+    <View style={styles.webColorInputWrap}>
+      <View style={[styles.colorSwatch, { backgroundColor: normalized }]} />
+      {typeof document !== 'undefined' &&
+        React.createElement('input', {
+          type: 'color',
+          value: normalized,
+          onChange: (e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value),
+          style: {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: 44,
+            height: 44,
+            opacity: 0,
+            cursor: 'pointer',
+          },
+        })}
+    </View>
   );
 }
 
@@ -211,10 +303,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#fff',
   },
-  colorRow: { flexDirection: 'row', gap: 12, flexWrap: 'wrap' },
-  colorButton: { alignItems: 'center' },
-  colorSwatch: { width: 44, height: 44, borderRadius: 22, marginBottom: 4 },
-  colorLabel: { fontSize: 12, color: '#666' },
+  colorRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap', alignItems: 'center' },
+  colorSwatch: { width: 44, height: 44, borderRadius: 22 },
+  colorSwatchSelected: { borderWidth: 3, borderColor: '#1a1a1a' },
+  webColorInputWrap: { position: 'relative', width: 44, height: 44 },
   pasteButton: {
     marginTop: 8,
     padding: 12,

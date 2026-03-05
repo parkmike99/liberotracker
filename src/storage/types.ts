@@ -6,6 +6,7 @@ export const STORAGE_KEYS = {
   TEAMS: 'liberotracker_teams',
   MATCHES: 'liberotracker_matches',
   MATCH_HISTORY_IDS: 'liberotracker_match_history_ids',
+  MATCH_SUMMARIES: 'liberotracker_match_summaries',
   APP_MODE: 'liberotracker_app_mode',
 } as const;
 
@@ -19,4 +20,16 @@ export interface StoredMatches {
 
 export interface StoredMatchHistoryIds {
   ids: string[];
+}
+
+export interface MatchSummary {
+  id: string;
+  homeName: string;
+  awayName: string;
+  setWinners: ('home' | 'away' | null)[];
+  updatedAt: number;
+}
+
+export interface StoredMatchSummaries {
+  [id: string]: string; // JSON string of MatchSummary
 }

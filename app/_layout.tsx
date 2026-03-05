@@ -40,6 +40,7 @@ export default function RootLayout() {
             <Stack.Screen name="teams/[id]" options={{ title: 'Team' }} />
             <Stack.Screen name="match/new" options={{ title: 'New Match' }} />
             <Stack.Screen name="match/[id]" options={{ title: 'Match', headerShown: false }} />
+            <Stack.Screen name="history" options={{ title: 'History' }} />
           </Stack>
           <StatusBar style="dark" />
         </View>

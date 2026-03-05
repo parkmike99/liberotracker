@@ -83,3 +83,6 @@ export async function loadJson<T>(key: string): Promise<T | null> {
 export async function saveJson<T>(key: string, value: T): Promise<void> {
   await persist.setItem(key, JSON.stringify(value));
 }
+
+export type { MatchSummary, StoredMatchSummaries } from './types';
+export { STORAGE_KEYS } from './types';

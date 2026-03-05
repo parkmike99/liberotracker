@@ -10,7 +10,8 @@ import { useEffect, useState, useMemo } from 'react';
 import type { TeamProfile } from '../src/types';
 import { loadJson } from '../src/storage';
 import { STORAGE_KEYS } from '../src/storage/types';
-import type { StoredMatchHistoryIds } from '../src/storage/types';
+import type { StoredMatchHistoryIds, StoredMatchSummaries } from '../src/storage/types';
+import type { MatchSummary } from '../src/storage/types';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -18,12 +19,32 @@ export default function HomeScreen() {
   const hydrated = useTeamsStore((s) => s.hydrated);
   const teams = useMemo(() => Object.values(teamsRecord), [teamsRecord]);
   const [recentMatchIds, setRecentMatchIds] = useState<string[]>([]);
+  const [summaries, setSummaries] = useState<Record<string, MatchSummary>>({});
 
   useEffect(() => {
     loadJson<StoredMatchHistoryIds>(STORAGE_KEYS.MATCH_HISTORY_IDS).then((data) => {
       setRecentMatchIds(data?.ids ?? []);
     });
   }, []);
+
+  useEffect(() => {
+    if (recentMatchIds.length === 0) return;
+    loadJson<StoredMatchSummaries>(STORAGE_KEYS.MATCH_SUMMARIES).then((data) => {
+      if (!data) return;
+      const out: Record<string, MatchSummary> = {};
+      for (const id of recentMatchIds) {
+        const raw = data[id];
+        if (raw) {
+          try {
+            out[id] = JSON.parse(raw) as MatchSummary;
+          } catch {
+            // skip
+          }
+        }
+      }
+      setSummaries(out);
+    });
+  }, [recentMatchIds.join(',')]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -43,6 +64,13 @@ export default function HomeScreen() {
         >
           <Text style={styles.bigButtonText}>Teams</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bigButton, styles.tertiaryButton]}
+          onPress={() => router.push('/history')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.bigButtonText}>History</Text>
+        </TouchableOpacity>
       </View>
 
       {hydrated && teams.length > 0 && (
@@ -59,15 +87,21 @@ export default function HomeScreen() {
       {recentMatchIds.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent matches</Text>
-          {recentMatchIds.slice(0, 5).map((id) => (
-            <TouchableOpacity
-              key={id}
-              style={styles.historyRow}
-              onPress={() => router.push(`/match/${id}`)}
-            >
-              <Text style={styles.historyId}>Match {id.slice(0, 8)}</Text>
-            </TouchableOpacity>
-          ))}
+          {recentMatchIds.slice(0, 5).map((id) => {
+            const sum = summaries[id];
+            const label = sum
+              ? `${sum.homeName} vs ${sum.awayName} — ${(sum.setWinners.filter((w) => w === 'home').length)}–${sum.setWinners.filter((w) => w === 'away').length}`
+              : `Match ${id.slice(0, 8)}`;
+            return (
+              <TouchableOpacity
+                key={id}
+                style={styles.historyRow}
+                onPress={() => router.push(`/match/${id}`)}
+              >
+                <Text style={styles.historyId}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
       )}
 
@@ -120,6 +154,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: { backgroundColor: '#1a5fb4' },
   secondaryButton: { backgroundColor: '#3584e4' },
+  tertiaryButton: { backgroundColor: '#5e5c64' },
   bigButtonText: { color: '#fff', fontSize: 20, fontWeight: '700' },
   teamCards: { gap: 12 },
   teamCard: {

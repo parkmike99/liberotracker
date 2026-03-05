@@ -34,19 +34,27 @@ export function Scoreboard({
 }: ScoreboardProps) {
   if (compact) {
     return (
-      <View style={[styles.compact]}>
-        <Text style={styles.compactSet}>Set {setIndex + 1}/{totalSets}</Text>
-        <Text style={styles.compactScore}>
-          {homeScore} – {awayScore}
-        </Text>
-        {onUndo && (
-          <TouchableOpacity
-            style={[styles.undoBtn, !canUndo && styles.undoBtnDisabled]}
-            onPress={onUndo}
-            disabled={!canUndo}
-          >
-            <Text style={styles.undoBtnText}>Undo</Text>
-          </TouchableOpacity>
+      <View style={styles.compactColumn}>
+        <View style={[styles.compact]}>
+          <Text style={styles.compactSet}>Set {setIndex + 1}/{totalSets}</Text>
+          <Text style={styles.compactScore}>
+            {homeScore} – {awayScore}
+          </Text>
+          {onUndo && (
+            <TouchableOpacity
+              style={[styles.undoBtn, !canUndo && styles.undoBtnDisabled]}
+              onPress={onUndo}
+              disabled={!canUndo}
+            >
+              <Text style={styles.undoBtnText}>Undo</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        {servingTeam != null && (
+          <Text style={styles.compactServe}>
+            Serving: {servingTeam === 'home' ? homeName : awayName}
+            {serverNumber != null ? ` #${serverNumber}` : ''}
+          </Text>
         )}
       </View>
     );
@@ -92,16 +100,21 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
+  compactColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
   compact: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
   },
   compactSet: { fontSize: 11, fontWeight: '600', color: '#555' },
   compactScore: { fontSize: 16, fontWeight: '800', color: '#1a1a1a' },
+  compactServe: { fontSize: 11, fontWeight: '600', color: '#1a5fb4', marginTop: 2 },
   scoreRow: {
     flexDirection: 'row',
     alignItems: 'center',

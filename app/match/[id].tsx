@@ -15,19 +15,25 @@ import {
 } from 'react-native';
 import { useTeamsStore } from '../../src/store/useTeamsStore';
 import { useMatchStore } from '../../src/store/useMatchStore';
+import { loadJson, saveJson, STORAGE_KEYS } from '../../src/storage';
+import type { StoredMatchSummaries } from '../../src/storage/types';
 import { CourtView, type CourtZoneData, type DragSource, getZoneBounds } from '../../src/components/CourtView';
+import { COURT_BORDER_PERCENT } from '../../src/components/CourtSvg';
 import { BenchStrip } from '../../src/components/BenchStrip';
 import { Scoreboard } from '../../src/components/Scoreboard';
 import { LiberoModal } from '../../src/components/LiberoModal';
 import { SubstitutionModal } from '../../src/components/SubstitutionModal';
 import { SetBreakModal } from '../../src/components/SetBreakModal';
 import { ViolationBanner } from '../../src/components/ViolationBanner';
+import { InstructionBanner } from '../../src/components/InstructionBanner';
 import { useAppModeStore } from '../../src/store/useAppModeStore';
 import type { Side, ZoneId } from '../../src/types';
+import { getPairMate, getPairIndex, SUB_PAIR_OUTLINE_COLORS } from '../../src/types';
 
 const BACK_ROW_ZONES: ZoneId[] = [1, 6, 5];
-const TOP_ROW_HEIGHT = 72;
-const SCOREBOARD_WIDTH = 80;
+const SCOREBOARD_HEIGHT = 56;
+const BENCH_SIDE_WIDTH = 56;
+const COURT_TOP_PADDING = 48;
 const DEFAULT_HOME_COLOR = '#1a5fb4';
 const DEFAULT_AWAY_COLOR = '#c64600';
 
@@ -103,14 +109,18 @@ export default function MatchTrackingScreen() {
   const remainingSubsAway = (match?.ruleSet.substitutionsPerSet ?? 15) - (currentSet?.away.subsUsed ?? 0);
 
   const { width: windowWidth, height: windowHeight } = Dimensions.get('window');
-  const topRowHeight = TOP_ROW_HEIGHT;
   const actionPanelHeight = 80;
-  const availableHeight = windowHeight - topRowHeight - actionPanelHeight;
+  const courtTotalWidth = (w: number) => w * (1 + 2 * COURT_BORDER_PERCENT);
+  const availableHeight = windowHeight - actionPanelHeight - SCOREBOARD_HEIGHT;
   const courtHeight = Math.floor((2 / 3) * availableHeight);
-  const courtWidth = courtHeight / 2;
-  const benchStripWidth = Math.floor((windowWidth - SCOREBOARD_WIDTH) / 2);
-  const scoreboardWidth = SCOREBOARD_WIDTH;
-  const courtLeftOffset = Math.floor((windowWidth - courtWidth) / 2);
+  const courtWidth = Math.min(courtHeight / 2, Math.floor((windowWidth - 2 * BENCH_SIDE_WIDTH - 16) / (1 + 2 * COURT_BORDER_PERCENT)));
+  const totalCourtW = courtTotalWidth(courtWidth);
+  const totalContentWidth = 2 * BENCH_SIDE_WIDTH + totalCourtW;
+  const contentLeftOffset = Math.floor((windowWidth - totalContentWidth) / 2);
+  const courtLeftOffset = contentLeftOffset + BENCH_SIDE_WIDTH;
+  const courtYOffset = SCOREBOARD_HEIGHT + COURT_TOP_PADDING;
+  const stripLeftHome = contentLeftOffset;
+  const stripLeftAway = contentLeftOffset + BENCH_SIDE_WIDTH + totalCourtW;
   const displayHomeColor = useMemo(() => {
     if (!homeTeam || !awayTeam) return homeTeam?.teamColor ?? DEFAULT_HOME_COLOR;
     return homeTeam.teamColor;
@@ -132,6 +142,9 @@ export default function MatchTrackingScreen() {
       const num = team.court[zoneId - 1];
       const isLibero = num !== null && team.liberoState.onCourtLiberoNumber === num;
       const isServer = currentSet.servingTeam === 'home' && zoneId === 1 && num === nextServer;
+      const pairMate = num != null && !team.liberoState.designatedLiberos.includes(num) ? getPairMate(team, num) : null;
+      const pairIdx = num != null ? getPairIndex(team, num) : -1;
+      const pairOutlineColor = pairIdx >= 0 ? SUB_PAIR_OUTLINE_COLORS[pairIdx % SUB_PAIR_OUTLINE_COLORS.length] : null;
       return {
         playerNumber: num,
         isLibero,
@@ -139,6 +152,8 @@ export default function MatchTrackingScreen() {
         teamColor,
         numberColor,
         liberoColor: homeTeam.liberoColor,
+        pairMateNumber: pairMate ?? undefined,
+        pairOutlineColor: pairOutlineColor ?? undefined,
       };
     });
   }, [currentSet, homeTeam, nextServer, displayHomeColor, displayHomeNumberColor]);
@@ -152,6 +167,9 @@ export default function MatchTrackingScreen() {
       const num = team.court[zoneId - 1];
       const isLibero = num !== null && team.liberoState.onCourtLiberoNumber === num;
       const isServer = currentSet.servingTeam === 'away' && zoneId === 1 && num === nextServer;
+      const pairMate = num != null && !team.liberoState.designatedLiberos.includes(num) ? getPairMate(team, num) : null;
+      const pairIdx = num != null ? getPairIndex(team, num) : -1;
+      const pairOutlineColor = pairIdx >= 0 ? SUB_PAIR_OUTLINE_COLORS[pairIdx % SUB_PAIR_OUTLINE_COLORS.length] : null;
       return {
         playerNumber: num,
         isLibero,
@@ -159,6 +177,8 @@ export default function MatchTrackingScreen() {
         teamColor,
         numberColor,
         liberoColor: awayTeam.liberoColor,
+        pairMateNumber: pairMate ?? undefined,
+        pairOutlineColor: pairOutlineColor ?? undefined,
       };
     });
   }, [currentSet, awayTeam, nextServer, displayAwayColor, displayAwayNumberColor]);
@@ -178,25 +198,66 @@ export default function MatchTrackingScreen() {
   const benchHome = useMemo(() => {
     if (!currentSet || !homeTeam) return [];
     const onCourt = new Set(currentSet.home.court.filter((n): n is number => n != null));
-    return homeTeam.rosterNumbers.filter((n) => !onCourt.has(n));
+    return homeTeam.rosterNumbers.filter((n) => !onCourt.has(n)).sort((a, b) => a - b);
   }, [currentSet?.home.court, homeTeam?.rosterNumbers]);
 
   const benchAway = useMemo(() => {
     if (!currentSet || !awayTeam) return [];
     const onCourt = new Set(currentSet.away.court.filter((n): n is number => n != null));
-    return awayTeam.rosterNumbers.filter((n) => !onCourt.has(n));
+    return awayTeam.rosterNumbers.filter((n) => !onCourt.has(n)).sort((a, b) => a - b);
   }, [currentSet?.away.court, awayTeam?.rosterNumbers]);
+
+  /** Liberos on bench (designated but not on court) for drag-to-back-row = Libero IN */
+  const liberosOnBenchHome = useMemo(() => {
+    if (!currentSet?.home.liberoState.designatedLiberos.length) return [];
+    const onCourt = currentSet.home.liberoState.onCourtLiberoNumber;
+    return currentSet.home.liberoState.designatedLiberos.filter((n) => n !== onCourt);
+  }, [currentSet?.home.liberoState.designatedLiberos, currentSet?.home.liberoState.onCourtLiberoNumber]);
+
+  const liberosOnBenchAway = useMemo(() => {
+    if (!currentSet?.away.liberoState.designatedLiberos.length) return [];
+    const onCourt = currentSet.away.liberoState.onCourtLiberoNumber;
+    return currentSet.away.liberoState.designatedLiberos.filter((n) => n !== onCourt);
+  }, [currentSet?.away.liberoState.designatedLiberos, currentSet?.away.liberoState.onCourtLiberoNumber]);
+
+  const getPairInfoHome = useCallback(
+    (playerNumber: number) => {
+      if (!currentSet) return { pairMate: null as number | null, outlineColor: null as string | null };
+      const team = currentSet.home;
+      const pairMate = getPairMate(team, playerNumber);
+      const idx = getPairIndex(team, playerNumber);
+      const outlineColor = idx >= 0 ? SUB_PAIR_OUTLINE_COLORS[idx % SUB_PAIR_OUTLINE_COLORS.length] : null;
+      return { pairMate, outlineColor };
+    },
+    [currentSet]
+  );
+
+  const getPairInfoAway = useCallback(
+    (playerNumber: number) => {
+      if (!currentSet) return { pairMate: null as number | null, outlineColor: null as string | null };
+      const team = currentSet.away;
+      const pairMate = getPairMate(team, playerNumber);
+      const idx = getPairIndex(team, playerNumber);
+      const outlineColor = idx >= 0 ? SUB_PAIR_OUTLINE_COLORS[idx % SUB_PAIR_OUTLINE_COLORS.length] : null;
+      return { pairMate, outlineColor };
+    },
+    [currentSet]
+  );
 
   const handleZonePress = (side: Side, zone: ZoneId) => {
     if (liberoMode === 'in' && liberoSide === side && BACK_ROW_ZONES.includes(zone)) {
       const team = currentSet?.[side];
       const playerInZone = team?.court[zone - 1];
       if (playerInZone != null && team?.liberoState.designatedLiberos.length) {
-        const lib = team.liberoState.designatedLiberos[0];
-        liberoIn(side, zone, playerInZone);
-        setLiberoModalVisible(false);
-        setLiberoMode('choose_side');
-        setLiberoSide(null);
+        const result = liberoIn(side, zone, playerInZone);
+        if (result.success) {
+          setLiberoModalVisible(false);
+          setLiberoMode('choose_side');
+          setLiberoSide(null);
+          setViolation(null);
+        } else {
+          setViolation(result.violation ?? 'Libero replacement not allowed.');
+        }
       }
       return;
     }
@@ -210,14 +271,40 @@ export default function MatchTrackingScreen() {
   const handleLiberoIn = (side: Side) => {
     setLiberoSide(side);
     setLiberoMode('in');
+    setLiberoModalVisible(false);
   };
 
-  const handleLiberoOut = (side: Side) => {
-    liberoOut(side);
-    setLiberoModalVisible(false);
-    setLiberoMode('choose_side');
-    setLiberoSide(null);
+  const handleLiberoOutReturn = () => {
+    if (liberoSide == null) return;
+    const result = liberoOut(liberoSide);
+    if (result.success) {
+      setViolation(null);
+      setLiberoModalVisible(false);
+      setLiberoMode('choose_side');
+      setLiberoSide(null);
+    } else {
+      setViolation(result.violation ?? 'Libero out failed.');
+    }
   };
+
+  const handleLiberoOutSubPairMate = (playerNumber: number) => {
+    if (liberoSide == null) return;
+    const result = liberoOut(liberoSide, { incomingNumber: playerNumber });
+    if (result.success) {
+      setViolation(null);
+      setLiberoModalVisible(false);
+      setLiberoMode('choose_side');
+      setLiberoSide(null);
+    } else {
+      setViolation(result.violation ?? 'Sub not allowed.');
+    }
+  };
+
+  const liberoOutReplacedPlayer = liberoSide != null && currentSet ? currentSet[liberoSide].liberoState.replacedPlayerNumber ?? null : null;
+  const liberoOutPairMate = liberoOutReplacedPlayer != null && currentSet && liberoSide != null
+    ? getPairMate(currentSet[liberoSide], liberoOutReplacedPlayer)
+    : null;
+  const liberoOutRemainingSubs = liberoSide === 'home' ? remainingSubsHome : liberoSide === 'away' ? remainingSubsAway : 0;
 
   const handleSubPlayer = (number: number) => {
     if (subSide == null || subOutgoingZone == null) return;
@@ -226,11 +313,15 @@ export default function MatchTrackingScreen() {
       setViolation('No substitutions remaining this set (15 max).');
       return;
     }
-    setViolation(null);
-    substitution(subSide, subOutgoingZone, number);
-    setSubModalVisible(false);
-    setSubSide(null);
-    setSubOutgoingZone(null);
+    const result = substitution(subSide, subOutgoingZone, number);
+    if (result.success) {
+      setViolation(null);
+      setSubModalVisible(false);
+      setSubSide(null);
+      setSubOutgoingZone(null);
+    } else {
+      setViolation(result.violation ?? 'Substitution not allowed.');
+    }
   };
 
   const handleDrop = useCallback(
@@ -238,24 +329,43 @@ export default function MatchTrackingScreen() {
       if (source.type === 'libero') {
         liberoOut(source.side);
         const playerInZone = currentSet?.[side].court[zoneId - 1];
-        if (playerInZone != null) liberoIn(side, zoneId, playerInZone);
+        if (playerInZone != null) {
+          const result = liberoIn(source.side, zoneId, playerInZone);
+          if (!result.success) setViolation(result.violation ?? 'Libero replacement not allowed.');
+        }
         return;
       }
       if (source.type === 'bench') {
+        if (source.isLibero && BACK_ROW_ZONES.includes(zoneId)) {
+          const playerInZone = currentSet?.[side].court[zoneId - 1];
+          if (playerInZone != null && !currentSet?.[side].liberoState.designatedLiberos.includes(playerInZone)) {
+            const result = liberoIn(side, zoneId, playerInZone, source.playerNumber);
+            if (result.success) setViolation(null);
+            else setViolation(result.violation ?? 'Libero replacement not allowed.');
+          } else {
+            setViolation('Libero can only replace a back-row non-libero player.');
+          }
+          return;
+        }
         const remaining = source.side === 'home' ? remainingSubsHome : remainingSubsAway;
         if (appMode === 'guided' && remaining <= 0) {
           setViolation('No substitutions remaining this set (15 max).');
           return;
         }
-        setViolation(null);
-        substitution(source.side, zoneId, source.playerNumber);
+        const result = substitution(source.side, zoneId, source.playerNumber);
+        if (result.success) {
+          setViolation(null);
+        } else {
+          setViolation(result.violation ?? 'Substitution not allowed.');
+        }
       }
     },
     [currentSet, liberoIn, liberoOut, substitution, appMode, remainingSubsHome, remainingSubsAway]
   );
 
   const handleSetBreakConfirm = (liberosHome: number[], liberosAway: number[]) => {
-    startNextSet(liberosHome, liberosAway);
+    if (setBreakWinner == null) return;
+    startNextSet(liberosHome, liberosAway, setBreakWinner);
     const updated = useMatchStore.getState().match;
     if (updated) saveMatch(updated);
     setSetBreakVisible(false);
@@ -263,8 +373,24 @@ export default function MatchTrackingScreen() {
   };
 
   useEffect(() => {
-    if (match) saveMatch(match);
-  }, [currentSet?.score, currentSet?.eventLog?.length]);
+    if (!match) return;
+    saveMatch(match);
+    const home = useTeamsStore.getState().getTeam(match.homeTeamId);
+    const away = useTeamsStore.getState().getTeam(match.awayTeamId);
+    if (home && away) {
+      const summary = {
+        id: match.id,
+        homeName: home.name,
+        awayName: away.name,
+        setWinners: match.setWinners,
+        updatedAt: match.updatedAt,
+      };
+      loadJson<StoredMatchSummaries>(STORAGE_KEYS.MATCH_SUMMARIES).then((data) => {
+        const next = { ...(data || {}), [match.id]: JSON.stringify(summary) };
+        return saveJson(STORAGE_KEYS.MATCH_SUMMARIES, next);
+      });
+    }
+  }, [match?.id, match?.updatedAt, currentSet?.score, currentSet?.eventLog?.length]);
 
   if (!match || !homeTeam || !awayTeam) {
     return (
@@ -282,73 +408,94 @@ export default function MatchTrackingScreen() {
         onFix={() => setViolation(null)}
         onOverride={appMode === 'guided' ? () => { setAppMode('coach'); setViolation(null); } : undefined}
       />
+      <InstructionBanner
+        visible={liberoMode === 'in'}
+        message="Tap a back-row zone (1, 6, 5) or drag libero from bench onto a back-row zone"
+        onCancel={() => { setLiberoMode('choose_side'); setLiberoSide(null); setLiberoModalVisible(false); }}
+      />
+      <InstructionBanner
+        visible={subModalVisible && subOutgoingZone === null}
+        message="Tap the outgoing player's zone on the court"
+        onCancel={() => { setSubModalVisible(false); setSubSide(null); setSubOutgoingZone(null); }}
+      />
 
-      <ScrollView
-        style={styles.courtScroll}
-        contentContainerStyle={[styles.courtScrollContent, { alignItems: 'center' }]}
-        showsVerticalScrollIndicator={false}
-      >
-        <CourtView
-          width={courtWidth}
-          height={courtHeight}
-          homeZones={homeZones}
-          awayZones={awayZones}
-          onDrop={handleDrop}
-          backRowZones={BACK_ROW_ZONES}
-        />
-      </ScrollView>
-
-      <View style={[styles.topRowOverlay, { top: 0, left: 0, right: 0, height: topRowHeight }]} pointerEvents="box-none">
-        <View style={[styles.benchWrap, { width: benchStripWidth }]}>
-          <BenchStrip
-            side="home"
-            label={homeTeam.name}
-            benchNumbers={benchHome}
-            teamColor={displayHomeColor}
-            numberColor={displayHomeNumberColor}
-            courtWidth={courtWidth}
-            courtHeight={courtHeight}
-            zoneBounds={zoneBounds}
-            onDrop={(side, zoneId, playerNumber) => handleDrop({ type: 'bench', side: 'home', playerNumber }, side, zoneId)}
-            stripWidth={benchStripWidth - 8}
-            layoutMode="portrait"
-            courtYOffset={topRowHeight}
-            stripLeft={0}
-            courtLeftOffset={courtLeftOffset}
-          />
-        </View>
-        <View style={[styles.scoreboardWrap, { width: scoreboardWidth }]}>
-          <Scoreboard
-            homeScore={currentSet?.score.home ?? 0}
-            awayScore={currentSet?.score.away ?? 0}
-            homeName={homeTeam.name}
-            awayName={awayTeam.name}
-            setIndex={match.currentSetIndex}
-            totalSets={match.ruleSet.setTargetScores.length}
-            servingTeam={currentSet?.servingTeam ?? null}
-            serverNumber={nextServer ?? null}
-            onUndo={undo}
-            canUndo={(currentSet?.eventLog.length ?? 0) > 0}
-            compact
-          />
-        </View>
-        <View style={[styles.benchWrap, { width: benchStripWidth }]}>
-          <BenchStrip
-            side="away"
-            label={awayTeam.name}
-            benchNumbers={benchAway}
-            teamColor={displayAwayColor}
-            numberColor={displayAwayNumberColor}
-            courtWidth={courtWidth}
-            courtHeight={courtHeight}
-            zoneBounds={zoneBounds}
-            onDrop={(side, zoneId, playerNumber) => handleDrop({ type: 'bench', side: 'away', playerNumber }, side, zoneId)}
-            stripWidth={benchStripWidth - 8}
-            layoutMode="portrait"
-            courtYOffset={topRowHeight}
-            stripLeft={benchStripWidth + scoreboardWidth}
-            courtLeftOffset={courtLeftOffset}
-          />
+      <View style={styles.mainRow}>
+        <View style={styles.centerColumn}>
+          <View style={[styles.scoreboardBar, { height: SCOREBOARD_HEIGHT }]}>
+            <Scoreboard
+              homeScore={currentSet?.score.home ?? 0}
+              awayScore={currentSet?.score.away ?? 0}
+              homeName={homeTeam.name}
+              awayName={awayTeam.name}
+              setIndex={match.currentSetIndex}
+              totalSets={match.ruleSet.setTargetScores.length}
+              servingTeam={currentSet?.servingTeam ?? null}
+              serverNumber={nextServer ?? null}
+              onUndo={undo}
+              canUndo={(currentSet?.eventLog.length ?? 0) > 0}
+              compact
+            />
+          </View>
+          <ScrollView
+            style={styles.courtScroll}
+            contentContainerStyle={[styles.courtScrollContent, { paddingTop: COURT_TOP_PADDING, paddingBottom: 16, alignItems: 'center' }]}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.courtRow}>
+              <View style={[styles.sideBenchWrap, { width: BENCH_SIDE_WIDTH }]}>
+                <BenchStrip
+                  side="home"
+                  label={homeTeam.name}
+                  benchNumbers={benchHome}
+                  teamColor={displayHomeColor}
+                  numberColor={displayHomeNumberColor}
+                  courtWidth={courtWidth}
+                  courtHeight={courtHeight}
+                  zoneBounds={zoneBounds}
+                  onDrop={(side, zoneId, playerNumber, isLibero) => handleDrop({ type: 'bench', side: 'home', playerNumber, isLibero }, side, zoneId)}
+                  stripWidth={BENCH_SIDE_WIDTH - 8}
+                  layoutMode="portrait"
+                  courtYOffset={courtYOffset}
+                  stripLeft={stripLeftHome}
+                  courtLeftOffset={courtLeftOffset}
+                  getPairInfo={getPairInfoHome}
+                  liberoNumbers={liberosOnBenchHome}
+                  liberoColor={homeTeam.liberoColor}
+                  displayLayout="column"
+                />
+              </View>
+              <CourtView
+                width={courtWidth}
+                height={courtHeight}
+                homeZones={homeZones}
+                awayZones={awayZones}
+                onDrop={handleDrop}
+                backRowZones={BACK_ROW_ZONES}
+              />
+              <View style={[styles.sideBenchWrap, styles.sideBenchWrapRight, { width: BENCH_SIDE_WIDTH }]}>
+                <BenchStrip
+                  side="away"
+                  label={awayTeam.name}
+                  benchNumbers={benchAway}
+                  teamColor={displayAwayColor}
+                  numberColor={displayAwayNumberColor}
+                  courtWidth={courtWidth}
+                  courtHeight={courtHeight}
+                  zoneBounds={zoneBounds}
+                  onDrop={(side, zoneId, playerNumber, isLibero) => handleDrop({ type: 'bench', side: 'away', playerNumber, isLibero }, side, zoneId)}
+                  stripWidth={BENCH_SIDE_WIDTH - 8}
+                  layoutMode="portrait"
+                  courtYOffset={courtYOffset}
+                  stripLeft={stripLeftAway}
+                  courtLeftOffset={courtLeftOffset}
+                  getPairInfo={getPairInfoAway}
+                  liberoNumbers={liberosOnBenchAway}
+                  liberoColor={awayTeam.liberoColor}
+                  displayLayout="column"
+                />
+              </View>
+            </View>
+          </ScrollView>
         </View>
       </View>
 
@@ -388,15 +535,21 @@ export default function MatchTrackingScreen() {
 
       <LiberoModal
         visible={liberoModalVisible}
-        onClose={() => { setLiberoModalVisible(false); setLiberoMode('choose_side'); setLiberoSide(null); }}
+        onClose={() => { setLiberoModalVisible(false); setLiberoMode('choose_side'); setLiberoSide(null); setViolation(null); }}
         onLiberoIn={handleLiberoIn}
-        onLiberoOut={handleLiberoOut}
+        onSideChange={setLiberoSide}
+        onLiberoOutRequest={liberoSide != null ? () => setViolation('No libero on court for this team.') : undefined}
+        replacedPlayer={liberoOutReplacedPlayer}
+        pairMate={liberoOutPairMate}
+        remainingSubs={liberoOutRemainingSubs}
+        onReturnReplaced={handleLiberoOutReturn}
+        onSubPairMate={handleLiberoOutSubPairMate}
         mode={liberoMode}
         selectedSide={liberoSide}
       />
 
       <SubstitutionModal
-        visible={subModalVisible}
+        visible={subModalVisible && subOutgoingZone != null}
         onClose={() => { setSubModalVisible(false); setSubSide(null); setSubOutgoingZone(null); }}
         side={subSide}
         rosterNumbers={subSide === 'home' ? homeTeam.rosterNumbers : subSide === 'away' ? awayTeam.rosterNumbers : []}
@@ -433,23 +586,43 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loading: { fontSize: 18, color: '#666' },
-  topRowOverlay: {
-    position: 'absolute',
+  mainRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'stretch',
-    justifyContent: 'center',
-    zIndex: 20,
-    elevation: 20,
+  },
+  sideBenchWrap: {
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    borderRightWidth: 1,
+    borderLeftWidth: 0,
+    borderColor: '#e0e0e0',
+    zIndex: 10,
+    elevation: 10,
+  },
+  sideBenchWrapRight: {
+    borderRightWidth: 0,
+    borderLeftWidth: 1,
+  },
+  centerColumn: {
+    flex: 1,
+    minWidth: 0,
+    zIndex: 0,
+    elevation: 0,
+  },
+  scoreboardBar: {
     backgroundColor: 'rgba(255,255,255,0.92)',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  benchWrap: { paddingVertical: 4 },
-  scoreboardWrap: { justifyContent: 'center', alignItems: 'center' },
   courtScroll: { flex: 1 },
-  courtScrollContent: { paddingVertical: 0 },
-  courtRow: { flexDirection: 'row', alignItems: 'stretch' },
-  benchColumn: { justifyContent: 'center', gap: 8 },
+  courtScrollContent: {},
+  courtRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
   actionPanel: {
     flexDirection: 'row',
     flexWrap: 'wrap',

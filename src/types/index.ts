@@ -21,7 +21,7 @@ export type ZoneId = 1 | 2 | 3 | 4 | 5 | 6;
 /** Court layout: front row 4-3-2, back row 5-6-1 */
 export const ZONE_ORDER: ZoneId[] = [1, 2, 3, 4, 5, 6];
 
-/** Rotation: 1→6→5→4→3→2→1 */
+/** Rotation clockwise (net at top): 1→6, 6→5, 5→4, 4→3, 3→2, 2→1 */
 export const ROTATION_NEXT: Record<ZoneId, ZoneId> = {
   1: 6, 6: 5, 5: 4, 4: 3, 3: 2, 2: 1,
 };
@@ -61,11 +61,31 @@ export interface LiberoState {
   designatedLiberos: number[];
   /** Currently on court (back row), or null */
   onCourtLiberoNumber: number | null;
-  /** Front-row player the libero replaced (when libero is in) */
+  /** Back-row player the libero replaced (when libero is in) */
   replacedPlayerNumber: number | null;
   /** Rotation position (zone) from which libero is allowed to serve this set; null = not yet set */
   liberoServePosition: number | null;
+  /** USAV: libero may serve in only one rotation per set. Replaced-player number when they first served. */
+  liberoServeKey: number | null;
 }
+
+/** Volleyball rule: once A is subbed for B (or vice versa), only that pair can swap for that position the rest of the set. */
+export interface SubstitutionPair {
+  a: number;
+  b: number;
+}
+
+/** Palette for pair outline colors (court and bench). Index = pair index in substitutionPairs. */
+export const SUB_PAIR_OUTLINE_COLORS: readonly string[] = [
+  '#9b59b6', // purple
+  '#e67e22', // orange
+  '#27ae60', // green
+  '#3498db', // blue
+  '#e74c3c', // red
+  '#f1c40f', // yellow
+  '#1abc9c', // teal
+  '#95a5a6', // gray
+];
 
 export interface TeamSetState {
   /** Rotation index 0–5; determines which 6 players are on court and where */
@@ -74,6 +94,28 @@ export interface TeamSetState {
   court: CourtRow;
   liberoState: LiberoState;
   subsUsed: number;
+  /** Substitution pairs this set: only these two jersey numbers can swap for that "position". */
+  substitutionPairs: SubstitutionPair[];
+}
+
+/** Get the other player in the pair for this jersey number, or null if not in a pair. */
+export function getPairMate(team: TeamSetState, jerseyNumber: number): number | null {
+  const pairs = team.substitutionPairs ?? [];
+  for (const pair of pairs) {
+    if (pair.a === jerseyNumber) return pair.b;
+    if (pair.b === jerseyNumber) return pair.a;
+  }
+  return null;
+}
+
+/** Get pair index (for outline color). Returns -1 if not in a pair. */
+export function getPairIndex(team: TeamSetState, jerseyNumber: number): number {
+  const pairs = team.substitutionPairs ?? [];
+  for (let i = 0; i < pairs.length; i++) {
+    const pair = pairs[i];
+    if (pair.a === jerseyNumber || pair.b === jerseyNumber) return i;
+  }
+  return -1;
 }
 
 export interface SetState {

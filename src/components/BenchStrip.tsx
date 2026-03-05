@@ -36,6 +36,10 @@ function DraggableBenchCircle({
   courtYOffset,
   stripLeft,
   courtLeftOffset = 0,
+  pairMate,
+  outlineColor,
+  isLibero,
+  liberoColor,
 }: {
   number: number;
   teamColor: string;
@@ -46,12 +50,16 @@ function DraggableBenchCircle({
   courtWidth: number;
   courtHeight?: number;
   zoneBounds: ZoneBounds[];
-  onDrop: (side: 'home' | 'away', zoneId: ZoneId, playerNumber: number) => void;
+  onDrop: (side: 'home' | 'away', zoneId: ZoneId, playerNumber: number, isLibero?: boolean) => void;
   side: 'home' | 'away';
   layoutMode: BenchLayoutMode;
   courtYOffset?: number;
   stripLeft?: number;
   courtLeftOffset?: number;
+  pairMate?: number | null;
+  outlineColor?: string | null;
+  isLibero?: boolean;
+  liberoColor?: string;
 }) {
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -60,9 +68,9 @@ function DraggableBenchCircle({
 
   const handleDrop = useCallback(
     (zoneSide: 'home' | 'away', zoneId: ZoneId) => {
-      onDrop(zoneSide, zoneId, number);
+      onDrop(zoneSide, zoneId, number, isLibero);
     },
-    [number, onDrop]
+    [number, isLibero, onDrop]
   );
 
   const pan = Gesture.Pan()
@@ -112,6 +120,9 @@ function DraggableBenchCircle({
     transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
   }));
 
+  const borderColor = outlineColor ?? 'rgba(0,0,0,0.3)';
+  const borderWidth = outlineColor ? 3 : 2;
+  const fillColor = isLibero && liberoColor != null ? liberoColor : teamColor;
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
@@ -123,20 +134,31 @@ function DraggableBenchCircle({
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: teamColor,
-            borderWidth: 2,
-            borderColor: 'rgba(0,0,0,0.3)',
+            backgroundColor: fillColor,
+            borderWidth,
+            borderColor,
+            zIndex: 1000,
+            elevation: 1000,
           },
           animatedStyle,
         ]}
       >
         <Text style={[styles.number, { color: numberColor, fontSize: size * 0.45 }]}>{number}</Text>
+        {pairMate != null && (
+          <Text style={[styles.pairMateNumber, { color: numberColor, fontSize: size * 0.22 }]}>{pairMate}</Text>
+        )}
       </Animated.View>
     </GestureDetector>
   );
 }
 
 export type BenchLayoutMode = 'landscape' | 'portrait';
+
+/** 'grid' = 3 columns, 'column' = single column (top to bottom, numerical order). */
+export type BenchDisplayLayout = 'grid' | 'column';
+
+/** Per-player pair info for substitution pairing (same color as on-court pair). */
+export type BenchPairInfo = { pairMate: number | null; outlineColor: string | null };
 
 interface BenchStripProps {
   side: 'home' | 'away';
@@ -145,7 +167,7 @@ interface BenchStripProps {
   numberColor: string;
   courtWidth: number;
   zoneBounds: ZoneBounds[];
-  onDrop: (side: 'home' | 'away', zoneId: ZoneId, playerNumber: number) => void;
+  onDrop: (side: 'home' | 'away', zoneId: ZoneId, playerNumber: number, isLibero?: boolean) => void;
   stripWidth?: number;
   label?: string;
   layoutMode?: BenchLayoutMode;
@@ -154,6 +176,14 @@ interface BenchStripProps {
   stripLeft?: number;
   /** Court left edge (e.g. when court is centered). For drop detection. */
   courtLeftOffset?: number;
+  /** Optional: get pair info for each bench player (for outline + small number). */
+  getPairInfo?: (playerNumber: number) => BenchPairInfo;
+  /** Designated liberos for this side (off-court ones appear on bench); used to mark libero drops as libero IN not sub. */
+  liberoNumbers?: number[];
+  /** Circle fill color when the player is a libero (defaults to teamColor if not provided). */
+  liberoColor?: string;
+  /** 'column' = single column top-to-bottom (for side benches); 'grid' = 3-column grid. */
+  displayLayout?: BenchDisplayLayout;
 }
 
 export function BenchStrip({
@@ -171,20 +201,26 @@ export function BenchStrip({
   courtHeight,
   stripLeft = 0,
   courtLeftOffset = 0,
+  getPairInfo,
+  liberoNumbers,
+  liberoColor,
+  displayLayout = 'grid',
 }: BenchStripProps) {
   const size = 40;
   const gap = 6;
   const padding = 8;
+  const isColumn = displayLayout === 'column';
 
   return (
     <View style={[styles.strip, { width: stripWidth }]}>
       {label != null && <Text style={styles.label}>{label}</Text>}
       <View style={styles.row}>
         {benchNumbers.map((num, i) => {
-          const col = i % 3;
-          const row = Math.floor(i / 3);
+          const col = isColumn ? 0 : i % 3;
+          const row = isColumn ? i : Math.floor(i / 3);
           const initialX = padding + col * (size + gap);
           const initialY = padding + (label ? 20 : 0) + row * (size + gap);
+          const pairInfo = getPairInfo?.(num);
           return (
             <DraggableBenchCircle
               key={num}
@@ -203,6 +239,10 @@ export function BenchStrip({
               courtYOffset={courtYOffset}
               stripLeft={stripLeft}
               courtLeftOffset={courtLeftOffset}
+              pairMate={pairInfo?.pairMate ?? null}
+              outlineColor={pairInfo?.outlineColor ?? null}
+              isLibero={liberoNumbers?.includes(num)}
+              liberoColor={liberoColor}
             />
           );
         })}
@@ -234,4 +274,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   number: { fontWeight: '800' },
+  pairMateNumber: { fontWeight: '700', marginTop: -2 },
 });
